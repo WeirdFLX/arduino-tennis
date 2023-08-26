@@ -1,0 +1,5 @@
+{
+    "sketch": "arduino-tennis.ino",
+    "output": "build",
+    "board": "arduino:avr:mega"
+}

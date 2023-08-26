@@ -1,0 +1,24 @@
+  // Serial.println(x);
+  if ((millis() - 200) < timeBallThrown)
+  {
+    Rstepper += 5;
+    Rspeed = ((60 / ballInterval - (((60 / ballInterval) / 60) * 20000) / 1000 / 2) / 6);
+    stepperR.setSpeedProfile(Rspeed, 1000, 5000);
+  } // Soll für Motor ändern
+  else
+  {
+    // rapid
+    Rstepper += 5;
+    Rspeed = 1;
+    stepperR.setSpeedProfile(Rspeed, 1000, 5000);
+  }
+
+  Rstepper = Rstepper - Rstepperlast;
+  Rstepperlast = Rstepper + Rstepperlast;
+  if (Rstepper != 0)
+  {
+    stepperR.move(Rstepper);
+  }
+
+  // Serial.println(Xstepper);
+  // Serial.print(Xstepperlast);
