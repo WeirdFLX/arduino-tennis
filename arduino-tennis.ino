@@ -253,8 +253,8 @@ void loop()
       resetLcdField();
       programmStatus = ballOneSelected;
     }
-    stepperXadjust();
-    stepperRadjust();
+    stepperXAdjust();
+    stepperRAdjust();
   }
 }
 
@@ -684,7 +684,7 @@ void sharedInterrupt()
  */
 
 //--- Abschnitt: Stepper
-void stepperXadjust()
+void stepperXAdjust()
 {
   // Serial.println(x);
 
@@ -703,7 +703,7 @@ void stepperXadjust()
   // Serial.print(Xstepperlast);
 }
 
-void stepperRadjust()
+void stepperRAdjust()
 {
   float rSpeed = 60 / 6 / ballInterval;
   //Rspeed = ((60 / ballInterval - (((60 / ballInterval) / 60) * 20000) / 1000 / 2) / 6);
