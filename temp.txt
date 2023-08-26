@@ -22,3 +22,12 @@
 
   // Serial.println(Xstepper);
   // Serial.print(Xstepperlast);
+
+
+
+  -> Bei Start der Rotation millis Speichern
+  -> prüfung im Loop ob millis > alte_millis + ballInterval + buffer (PROZENTUAL?)
+  -> Wenn ja, dann stepperRadjust aufrufen -> nächste Kammer ansteuern
+  -> 3 mal getriggert; Display: Störung; Infitiy-Drehung
+
+  

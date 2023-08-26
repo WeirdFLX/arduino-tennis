@@ -185,7 +185,6 @@ void setup()
   stepperX.begin(revspeed, 1);
   stepperY.begin(revspeed, 1);
   stepperR.begin(revspeed, 1);
-  Serial.println(stepperR.getSteps());
   stepperX.move(2);
 
   // Pins setzen und Interrupts anbinden
@@ -249,7 +248,6 @@ void loop()
   {
 
     pressMethod();
-
     if (programmStatus == reset)
     {
       resetLcdField();
@@ -388,7 +386,7 @@ void updateBallInterval()
 {
   int oldBallInterval = ballInterval;
   ballInterval = updatePropertyValue(ballInterval, 1, ballIntervallDT);
-  ballInterval = overflowCorrection(ballInterval, 20, 2);
+  ballInterval = overflowCorrection(ballInterval, 10, 2);
   if (oldBallInterval != ballInterval)
   {
     refreshSevenSegmentDisplay(ballIntervalDisplay, ballInterval);
@@ -715,7 +713,7 @@ void stepperRadjust()
     stepperR.setRPM(Rspeed);
     stepperR.rotate(30);
     ballThrown = false;
-
+    Serial.println("DONE");
   }
 
   //Serial.println(stepperR.getStepsRemaining());
@@ -726,7 +724,6 @@ void lichtschrankeAktion()
 {
   // TODO: Stepperx durch Steppertrommel ersetzen
   timeBallThrown = millis();
-  stepperR.stop();
   ballThrown = true;
 
   handleLichtschrankeInterrupt = false;
