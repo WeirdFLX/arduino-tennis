@@ -68,8 +68,8 @@ BasicStepperDriver stepperX(stepsprorev, 23, 22);
 BasicStepperDriver stepperY(stepsprorev, 26, 27);
 BasicStepperDriver stepperR(stepsprorev, 24, 25);
 // Stepperlogging
-unsigned long Xstepper;
-unsigned long Xstepperlast;
+unsigned long xStepper;
+unsigned long xStepperLast;
 unsigned long Rstepper;
 unsigned long Rstepperlast;
 unsigned long timeBallThrown;
@@ -179,7 +179,7 @@ void setup()
   // Serielle Ausgabe verbinden für ggf. Debugging
   Serial.begin(9600);
 
-  Xstepperlast = 0;
+  xStepperLast = 0;
   // Schrittmotoren Parameter
   revspeed = 30;
   stepperX.begin(revspeed, 1);
@@ -690,13 +690,13 @@ void stepperXadjust()
 
   if (ballOneValues[0] == 0)
   {
-    Xstepper = ((sollTrommelMan[1] * 1) - 50);
+    xStepper = ((sollTrommelMan[1] * 1) - 50);
   }
-  Xstepper = Xstepper - Xstepperlast;
-  Xstepperlast = Xstepper + Xstepperlast;
-  if (Xstepper != 0)
+  xStepper = xStepper - xStepperLast;
+  xStepperLast = xStepper + xStepperLast;
+  if (xStepper != 0)
   {
-    stepperX.move(Xstepper);
+    stepperX.move(xStepper);
   }
 
   // Serial.println(Xstepper);
@@ -705,12 +705,12 @@ void stepperXadjust()
 
 void stepperRadjust()
 {
-  float Rspeed = 60 / 6 / ballInterval;
+  float rSpeed = 60 / 6 / ballInterval;
   //Rspeed = ((60 / ballInterval - (((60 / ballInterval) / 60) * 20000) / 1000 / 2) / 6);
   //Serial.println(Rspeed);
   if(ballThrown) {
     stepperR.setSpeedProfile(0, 1000, 5000);
-    stepperR.setRPM(Rspeed);
+    stepperR.setRPM(rSpeed);
     stepperR.rotate(30);
     ballThrown = false;
     Serial.println("DONE");
