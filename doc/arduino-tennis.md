@@ -1,6 +1,7 @@
 - [1. Grundlegende Idee](#1-grundlegende-idee)
 - [2. LC-Display](#2-lc-display)
   - [2.1. Normale Ansicht](#21-normale-ansicht)
+    - [ToDos](#todos)
   - [2.2. Debug Ansicht](#22-debug-ansicht)
 - [3. Ballparameter](#3-ballparameter)
   - [3.1. Position](#31-position)
@@ -11,9 +12,11 @@
 - [4. Steppermotoren](#4-steppermotoren)
   - [4.1. induktive Sensoren](#41-induktive-sensoren)
   - [4.2. Steppermotor X](#42-steppermotor-x)
+    - [ToDos](#todos-1)
   - [4.3. Steppermotor Y](#43-steppermotor-y)
+    - [ToDos](#todos-2)
   - [4.4. Steppermotor R](#44-steppermotor-r)
-    - [4.4.1. Offene Punkte:](#441-offene-punkte)
+    - [4.4.1. ToDos](#441-todos)
 - [5. Trommeln](#5-trommeln)
 
 
@@ -26,8 +29,11 @@ Das User-Interface ist über Encode, ein LC-Display und Sieben-Segment Anzeigen 
 Bei der normalen Ansicht soll der Nutzer sehen und einstellen können, an welche Stelle auf dem Spielfeld der Ball gespielt werden soll.
 Es sollen zwei Bälle gespeichert werden können.
 
-### 2.2. Debug Ansicht
+#### ToDos
+- Fehlermeldung; Errorcode im Automatikmodus
 
+### 2.2. Debug Ansicht
+Hier könnte Text stehen
 
 ## 3. Ballparameter
 Der Wurf des Balls durch die Maschine kann über die folgenden Parameter gesteuert werden. Der Wert kann über den dazugehörigen Encoder geändert werden und wird auf der dazugehörigen Sieben-Segment Anzeige angezeigt.
@@ -69,6 +75,11 @@ Hierbei sind folgende Modi zu beachten:
 
 Die Anpassung der horizontalen Richtung erfolgt permanent innterhalb des Loops über die Methode `stepperXAdjust`.
 
+#### ToDos
+- Nullung des Motors durch den induktiven Sensor
+- Wechsel L/R im Automatikmodus
+- Drehung nach Auswurf über Lichtschranke
+
 ### 4.3. Steppermotor Y
 Der Steppermotor Y steuert die vertikale Richtung des Balls. Dies erfolgt, indem die beiden Trommeln um einen errechneten Betrag vertikal geneigt werden.
 Hierbei sind folgende Modi zu beachten:
@@ -79,16 +90,20 @@ Hierbei sind folgende Modi zu beachten:
 
 Die Anpassung der vertikalen Richtung erfolgt permanent innterhalb des Loops über die Methode `stepperYAdjust`.
 
+#### ToDos
+Ja Hans, analog Steppermotor X
+
 ### 4.4. Steppermotor R
 Der Steppermotor R regelt die Ballzufuhr aus dem Revolver zu den Trommeln.
-Die Geschwindigkeit ist abhängig von dem eingestellten [Intervall des Balls](#intervall) und wird wie folgt berechnet: `rSpeed = 60 / 6 / ballInterval`
+Die Geschwindigkeit ist abhängig von dem eingestellten [Intervall des Balls](#34-intervall) und wird wie folgt berechnet: `rSpeed = 60 / 6 / ballInterval`
 
 Die Anpassung der Geschwindigkeit erfolgt permanent innerhalb des Loops über die Methode `stepperRAdjust`.
 
-#### 4.4.1. Offene Punkte:
+#### 4.4.1. ToDos
 - Geschwindigkeit einmalig ermitteln, bei Anpassung des Intervalls; diese dann halten
 - Außer Overdrive aktiv: Auf Basis der Lichtschranke Geschwindkeit erhöhen (es kam seit Zeitraum x kein Ball mehr -> schneller drehen)
 - Wenn wieder im Normallauf, alte Geschwinidgkeit einstellen
 - Hausaufgabe für Eric: Lichtschranke ja oder nein
 
 ## 5. Trommeln
+Text schreiben, basierend auf Geschwindikeit und Spin
