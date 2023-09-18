@@ -1,7 +1,35 @@
+#include <ESC.h>
+
+#include <Wire.h>
+#include <Arduino.h>
 #include <LiquidCrystal_I2C.h>
+#include <A4988.h>
+
 #include <TM1637Display.h>
 #include <BasicStepperDriver.h>
 #include <EEPROM.h>
+#define MOTOR_STEPS 200
+#define RPM 120
+// Microstepping mode. If you hardwired it to save pins, set to the same value here.
+#define MICROSTEPS 1
+
+#define DIR 23
+#define STEP 22
+
+// #define SLEEP 13 // optional (just delete SLEEP from everywhere if not used)
+
+/*
+ * Choose one of the sections below that match your board
+ */
+
+#include "DRV8834.h"
+#define M0 10
+#define M1 11
+DRV8834 stepperX(MOTOR_STEPS, DIR, STEP, M0, M1);
+ESC upperESC(40, 1000, 2000, 800);
+ESC lowerESC(39, 1000, 2000, 800);
+
+long timer;
 
 // Unterklasse für den Status des Programmes
 enum programmStatusEnum
@@ -54,7 +82,7 @@ byte line_right[8] = {B00001, B00001, B00001, B00001, B00001, B00001, B00001, B0
 // Icon Ball
 byte ball[8] = {B00000, B00000, B00100, B01110, B01110, B00100, B00000, B00000};
 // Icon Leer
-byte empty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+byte empty[8] = {B00000, B00000, B00000, B00000, B00000, B000000, B00000, B00000};
 // Icon Arrow
 byte arrow[8] = {B00000, B00110, B01100, B11111, B11111, B01100, B00110, B00000};
 // Breite des Feldes
@@ -62,9 +90,10 @@ int lcdFieldWidth = 6;
 
 // Steppersettings
 int stepsprorev(200);
-int revspeed;
+int revspeed = 300;
 // Variablen für Stepper
-BasicStepperDriver stepperX(stepsprorev, 23, 22);
+// BasicStepperDriver stepperX(stepsprorev, 23, 22);
+int xStepperold;
 BasicStepperDriver stepperY(stepsprorev, 26, 27);
 BasicStepperDriver stepperR(stepsprorev, 24, 25);
 // Stepperlogging
@@ -82,10 +111,13 @@ bool motorInitialisiert;
 int ballPosition[2] = {1, 0};
 bool handleBallPositionInterrupt;
 bool ballPositionDT;
+
 // Pin-Deklarationen
 const byte encBallPositionCLK(2);
 const byte encBallPositionDT(4);
 const byte encBallPositionSW(5);
+long encPositionTime;
+bool encBallPosiotionCLKold;
 
 // Variablen und Display für Ballgeschwindigkeit
 TM1637Display ballSpeedDisplay = TM1637Display(53, 52);
@@ -95,15 +127,22 @@ bool ballSpeedDT;
 // Pin-Deklarationen
 const byte encBallSpeedCLK(3);
 const byte encBallSpeedDT(45);
-
+const byte encBallSpeedSW(6);
+unsigned long encSpeedTime;
+int oldBallSpeed;
+byte encSpeedbool; // nUR JEDER zweite
 // Variablen und Display für Ballspin
 TM1637Display ballSpinDisplay = TM1637Display(51, 50);
 int ballSpin;
 bool handleBallSpinInterrupt;
 bool ballSpinDT;
+int encSpinbool;
+int oldBallSpin;
+long encSpinTime;
+
 // Pin-Deklarationen
 const byte encBallSpinCLK(18);
-const byte encBallSpinDT(46);
+const byte encBallSpinDT(34);
 // für Debug-Modus
 const byte encBallSpinSW(29);
 
@@ -113,20 +152,22 @@ int ballInterval;
 bool handleBallIntervallInterrupt;
 bool ballIntervallDT;
 // Pin-Deklarationen
-const byte encBallIntervalCLK(19);
+
 const byte encBallIntervalDT(47);
 
 // Pin-Deklaration für geshareten 19er
-const byte pinBallInterval(42);
+const byte encBallIntervalCLK(41);
 const byte pinLichtschranke(44);
-bool sharedInterArrayOld[2] = {0, 0};
-bool sharedInterArray[2] = {0, 0};
+const byte encBallIntervalSW(36);
+const byte pinStart(35);
+bool sharedInterArrayOld[5] = {0, 0, 0, 0, 0};
+bool sharedInterArray[5] = {0, 0, 0, 0, 0};
 
-
+bool handleStartInterupt;
 // Variablen für Lichtschranke
 bool handleLichtschrankeInterrupt;
 // Pin-Deklaration
-//const byte lichtschranke(19);
+// const byte lichtschranke(19);
 
 /* Werte der gespeicherten Bälle
  * 0: X-Position
@@ -160,7 +201,7 @@ int absSpeedMaxVal;
 int absSpinMinVal;
 int absSpinMaxVal;*/
 
-int curDebugValues[8] = {0, 100, 25, 75, 0, 100, 0, 100};
+int curDebugValues[8] = {0, 100, 0, 100, 0, 70, 0, 70};
 int oldDebugValues[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 // Wurde ein Wert geändert?
 bool debugValueChanged[8] = {false, false, false, false, false, false, false, false};
@@ -173,34 +214,39 @@ float sollTrommelOne[4] = {0, 0, 0, 0};
 // Ball2
 float sollTrommelTwo[4] = {0, 0, 0, 0};
 
+float absSpeed[3] = {0, 0, 0};
+
+float absSpin[3] = {0, 0, 0};
+
 // Setup-Methode
 void setup()
 {
+
   // Serielle Ausgabe verbinden für ggf. Debugging
   Serial.begin(9600);
-
+  Wire.begin();
   xStepperLast = 0;
   // Schrittmotoren Parameter
   revspeed = 30;
-  stepperX.begin(revspeed, 1);
+  //  stepperX.begin(revspeed, 1);
   stepperY.begin(revspeed, 1);
   stepperR.begin(revspeed, 1);
-  stepperX.move(2);
+
+  //  stepperX.move(2);
 
   // Pins setzen und Interrupts anbinden
   pinMode(encBallPositionDT, INPUT);
   pinMode(encBallPositionSW, INPUT);
   pinMode(encBallSpeedDT, INPUT);
-  pinMode(encBallSpinDT, INPUT);
+  pinMode(encBallSpinDT, INPUT_PULLUP);
   pinMode(encBallSpinSW, INPUT);
   pinMode(encBallIntervalDT, INPUT);
-  pinMode(pinBallInterval, INPUT);
   pinMode(pinLichtschranke, INPUT);
-  //pinMode(lichtschranke, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(encBallPositionCLK), encoderBallPositionInterrupt, FALLING);
+  // pinMode(lichtschranke, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(encBallPositionCLK), encoderBallPositionInterrupt, CHANGE);
   attachInterrupt(digitalPinToInterrupt(encBallSpeedCLK), encoderBallSpeedInterrupt, FALLING);
   attachInterrupt(digitalPinToInterrupt(encBallSpinCLK), encoderBallSpinInterrupt, FALLING);
-  attachInterrupt(digitalPinToInterrupt(encBallIntervalCLK), sharedInterrupt, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(19), sharedInterrupt, CHANGE);
   // attachInterrupt(digitalPinToInterrupt(lichtschranke), lichtschrankeInterrupt, CHANGE);
 
   // attachInterrupt(digitalPinToInterrupt(encBallPositionSW),pressMethod,RISING);
@@ -208,7 +254,6 @@ void setup()
   ballSpeed = 10;
   ballSpin = 0;
   ballInterval = 2;
-
 
   // Displays initialisiseren
   initializeLcdDisplay();
@@ -218,29 +263,31 @@ void setup()
   programmStatus = ballOneSelected;
   debugParameterStatus = initVerHor;
   trommelStatus = man;
+  A4988(short(200), short(23), short(22));
+  stepperX.setSpeedProfile(BasicStepperDriver::LINEAR_SPEED, 6000, 6000);
+  // Serial.println(x);
+  stepperX.setRPM(300);
+  upperESC.arm();
+  lowerESC.arm();
 }
 
 // Main-Loop
 void loop()
 {
+  unsigned wait_time_micros = stepperX.nextAction();
+
   interruptHandler();
-  trommelBerechnen();
+  // trommelBerechnen();
   if (programmStatus == debug)
   {
     debugInit();
     debugCheckSave();
-    // MIN u. MAX für L/R + H/T, aktuell 90°
-    // Trommelgeschwindigkeit, absoluter Wert (MIN/MAX)
-    // (MAX-MIN)/100 * x + MIN = 2 * x + MIN = TrommelSpeed
-    // ^^ Schrittberechnung auf Basis von MIN und MAX ^^
-    // Spin von 80:
-    // Trommel1 = Trommelspeed * ((Spin+100)/2)/100 (→80%)
-    // Trommel2 = Trommelspeed * (1-((Spin+100)/2)/100) (→20%)
-    // MAX/MIN Spin analog Trommel
   }
   else if (programmStatus == debugDone)
   {
     // Speichern der geänderten Werte, nur falls geändert
+
+    trommelBerechnen();
     updateDebugParameterStatus();
     programmStatus = reset;
   }
@@ -253,8 +300,8 @@ void loop()
       resetLcdField();
       programmStatus = ballOneSelected;
     }
-    stepperXAdjust();
-    stepperRAdjust();
+
+    trommelAdjust();
   }
 }
 
@@ -302,6 +349,7 @@ void pressMethod()
   {
     pressMethodUsed = true;
   }
+  trommelBerechnen();
 }
 
 //--- Abschnitt: Balleigenschaften aktualisieren
@@ -310,6 +358,7 @@ void pressMethod()
  */
 void updateBallPosition(bool overrideDT)
 {
+  Serial.print(ballPositionDT);
   deleteBall();
   drawBallNumber();
   if (overrideDT)
@@ -318,10 +367,13 @@ void updateBallPosition(bool overrideDT)
   }
   else
   {
-    ballPosition[0] = updatePropertyValue(ballPosition[0], 1, ballPositionDT);
+    if (encPositionTime + 10 < millis())
+      ballPosition[0] = updatePropertyValue(ballPosition[0], 1, ballPositionDT);
+    encPositionTime = millis();
   }
   wrapBallPosition();
   drawBall();
+  trommelBerechnen();
 }
 
 /* Methode um die Position des Balles auf die Breite des Feldes anzupassen
@@ -356,29 +408,54 @@ void wrapBallPosition()
  */
 void updateBallSpeed()
 {
-  int oldBallSpeed = ballSpeed;
-  ballSpeed = updatePropertyValue(ballSpeed, 10, ballSpeedDT);
-  ballSpeed = overflowCorrection(ballSpeed, 100, 10);
+  if (encSpeedbool < 2)
+  {
+    encSpeedbool = encSpeedbool + 1;
+  }
+  if ((encSpeedbool >= 2))
+  {
+    if (encSpeedTime + 2 < millis())
+    {
+      oldBallSpeed = ballSpeed;
+      ballSpeed = updatePropertyValue(ballSpeed, 2, ballSpeedDT);
+      encSpeedTime = millis();
+      ballSpeed = overflowCorrection(ballSpeed, 100, 10);
+      encSpeedbool = 0;
+    }
+  }
   if (oldBallSpeed != ballSpeed)
   {
     refreshSevenSegmentDisplay(ballSpeedDisplay, ballSpeed);
   }
+  trommelBerechnen();
 }
 
 /* Methode zur aktualisierung des Ball-Spins,
  * sowie des dazugehörigen Displays
  */
 void updateBallSpin()
-{
-  int oldBallSpin = ballSpin;
-  ballSpin = updatePropertyValue(ballSpin, 10, ballSpinDT);
-  ballSpin = overflowCorrection(ballSpin, 100, -100);
-  if (oldBallSpin != ballSpin)
+{ // Serial.print(ballSpinDT);
+  if (encSpinbool < 2)
   {
-    refreshSevenSegmentDisplay(ballSpinDisplay, ballSpin);
+    encSpinbool = encSpinbool + 1;
+  }
+  if ((encSpinbool >= 2) || ballSpinDT)
+  {
+    if (encSpinTime + 10 < millis())
+    {
+      oldBallSpin = ballSpin;
+      encSpinTime = millis();
+      ballSpin = updatePropertyValue(ballSpin, 10, ballSpinDT);
+      ballSpin = overflowCorrection(ballSpin, 100, -100);
+      encSpinbool = 0;
+    }
+    if (oldBallSpin != ballSpin)
+    {
+      refreshSevenSegmentDisplay(ballSpinDisplay, ballSpin);
+    }
+    trommelBerechnen();
   }
 }
-
 /* Methode zur aktualisierung des Ball-Intervalls,
  * sowie des dazugehörigen Displays
  */
@@ -391,6 +468,7 @@ void updateBallInterval()
   {
     refreshSevenSegmentDisplay(ballIntervalDisplay, ballInterval);
   }
+  trommelBerechnen();
 }
 
 /* Methode um eine Balleigenschaft zu
@@ -409,7 +487,7 @@ int updatePropertyValue(int value, int step, boolean increase)
   }
   else
   {
-    return value - step;
+    return value - (step);
   }
 }
 
@@ -469,21 +547,23 @@ void initializeSevenSegment()
  */
 void refreshSevenSegmentDisplay(TM1637Display display, int value)
 {
+  unsigned wait_time_micros = stepperX.nextAction();
   display.showNumberDec(value);
-  Serial.println("Display aktualisiert");
+  // Serial.println("Display aktualisiert");
 }
 
 /* Methode zur Initialisierung des LCD-Displays
  */
 void initializeLcdDisplay()
 {
+  lcd.init();
   lcd.begin(20, 4);
   lcd.createChar(0, line_left);
   lcd.createChar(1, line_right);
   lcd.createChar(3, ball);
   lcd.createChar(4, empty);
   lcd.createChar(5, arrow);
-  lcd.init();
+
   lcd.backlight();
 }
 
@@ -514,6 +594,7 @@ void resetLcdField()
  */
 void drawBall()
 {
+  unsigned wait_time_micros = stepperX.nextAction();
   lcd.setCursor(ballPosition[0], ballPosition[1]);
   lcd.write(byte(3));
 }
@@ -522,6 +603,7 @@ void drawBall()
  */
 void deleteBall()
 {
+  unsigned wait_time_micros = stepperX.nextAction();
   lcd.setCursor(ballPosition[0], ballPosition[1]);
   lcd.write(byte(4));
 }
@@ -535,6 +617,7 @@ void drawBallNumber()
    */
   if (ballTwoValues[0] != 0)
   {
+    unsigned wait_time_micros = stepperX.nextAction();
     lcd.setCursor(ballTwoValues[0], ballTwoValues[1]);
     lcd.print("2");
     lcd.setCursor(8, 2);
@@ -545,6 +628,7 @@ void drawBallNumber()
   }
   if (ballOneValues[0] != 0)
   {
+    unsigned wait_time_micros = stepperX.nextAction();
     lcd.setCursor(ballOneValues[0], ballOneValues[1]);
     lcd.print("1");
     lcd.setCursor(8, 1);
@@ -564,6 +648,13 @@ void interruptHandler()
   {
     if (handleBallPositionInterrupt)
     {
+      {
+        if (encBallPosiotionCLKold > digitalRead(encBallPositionCLK))
+        {
+          ballPositionDT = digitalRead(encBallPositionDT);
+        }
+      }
+      encBallPosiotionCLKold = digitalRead(encBallPositionCLK);
       debugAktion();
       handleBallPositionInterrupt = false;
     }
@@ -572,7 +663,13 @@ void interruptHandler()
   {
     if (handleBallPositionInterrupt)
     {
-      updateBallPosition(false);
+      if (encBallPosiotionCLKold > digitalRead(encBallPositionCLK))
+      {
+        updateBallPosition(false);
+        ballPositionDT = digitalRead(encBallPositionDT);
+      }
+      encBallPosiotionCLKold = digitalRead(encBallPositionCLK);
+
       handleBallPositionInterrupt = false;
     }
     if (handleBallSpeedInterrupt)
@@ -592,19 +689,27 @@ void interruptHandler()
     }
     if (handleLichtschrankeInterrupt)
     {
-      lichtschrankeAktion();        
+      lichtschrankeAktion();
       Serial.print("INTERRUPT");
       handleLichtschrankeInterrupt = false;
     }
+    if (handleStartInterupt)
+    {
+      upperESC.arm();
+      lowerESC.arm();
+      delay(5990);
+      handleStartInterupt = false;
+    }
 
     currentDebugPressState = digitalRead(encBallSpinSW);
-    if (lastDebugPressState == HIGH && currentDebugPressState == LOW)
+    if (lastDebugPressState == LOW && currentDebugPressState == HIGH)
     {
       debugReleasedTime = millis();
+
       Serial.println(debugReleasedTime);
       Serial.println(millis());
     }
-    else if (lastDebugPressState == LOW && currentDebugPressState == HIGH)
+    else if (lastDebugPressState == HIGH && currentDebugPressState == LOW)
     {
       debugPressedTime = millis();
       Serial.println("Losgelassen");
@@ -632,7 +737,6 @@ void interruptHandler()
 void encoderBallPositionInterrupt()
 {
   handleBallPositionInterrupt = true;
-  ballPositionDT = digitalRead(encBallPositionDT);
 }
 
 /* Interrupt-Methode für Ballgeschwindigkeit
@@ -654,23 +758,44 @@ void encoderBallSpinInterrupt()
 /* Interrupt-Methode für Ballintervall
  */
 void sharedInterrupt()
-{
-    //Serial.println(digitalRead(pinLichtschranke));
-  sharedInterArray[0] = digitalRead(pinLichtschranke);  
-  sharedInterArray[1] = digitalRead(pinBallInterval);
+{ /*// Pin-Deklaration für geshareten 19er
+ const byte pinLichtschranke(44)
 
+
+ const byte encBallIntervalCLK(41);
+ const byte encBallIntervalSW(36);
+ const byte pinStart(35);
+ bool sharedInterArrayOld[5] = {0, 0, 0, 0, 0};
+ bool sharedInterArray[5] = {0, 0, 0, 0, 0};*/
+
+  Serial.println(digitalRead(encBallIntervalCLK));
+  sharedInterArray[0] = digitalRead(pinLichtschranke);
+  sharedInterArray[1] = digitalRead(encBallIntervalCLK);
+  sharedInterArray[2] = digitalRead(encBallIntervalSW);
+  sharedInterArray[3] = digitalRead(pinStart);
   if (sharedInterArrayOld[0] < sharedInterArray[0])
   {
     handleLichtschrankeInterrupt = true;
   }
-  else if (sharedInterArrayOld[1] > sharedInterArray[1])
+  if (sharedInterArrayOld[1] > sharedInterArray[1])
   {
     handleBallIntervallInterrupt = true;
     ballIntervallDT = digitalRead(encBallIntervalDT);
   }
+  if (sharedInterArrayOld[2] > sharedInterArray[2])
+  {
+    // handleIntervalSW=true;
+  }
+  if (sharedInterArrayOld[3] < sharedInterArray[3])
+  {
+    handleStartInterupt = true;
+  }
 
   sharedInterArrayOld[0] = sharedInterArray[0];
-  sharedInterArrayOld[1] = sharedInterArray[1];  
+  sharedInterArrayOld[1] = sharedInterArray[1];
+  sharedInterArrayOld[2] = sharedInterArray[2];
+  sharedInterArrayOld[3] = sharedInterArray[3];
+  sharedInterArrayOld[4] = sharedInterArray[4];
 }
 
 /* Interrupt-Methode für Lichtschranke LEGACY
@@ -686,38 +811,53 @@ void sharedInterrupt()
 //--- Abschnitt: Stepper
 void stepperXAdjust()
 {
-  // Serial.println(x);
 
   if (ballOneValues[0] == 0)
   {
-    xStepper = ((sollTrommelMan[1] * 1) - 50);
-  }
-  xStepper = xStepper - xStepperLast;
-  xStepperLast = xStepper + xStepperLast;
-  if (xStepper != 0)
-  {
-    stepperX.move(xStepper);
+    xStepper = ((10 + 2 * sollTrommelMan[1]));
   }
 
-  // Serial.println(Xstepper);
+  // if (xStepper != 0 )
+  // Serial.print(stepperX.getStepsRemaining());
+  /*if (stepperX.getStepsRemaining()==0){
+     xStepper = xStepper - xStepperLast;
+
+
+     stepperX.startMove(xStepper);
+         xStepperLast = xStepper + xStepperLast;
+  }*/
+  //
+  // else{stepperX.stop();}
+
+  Serial.println(xStepper);
   // Serial.print(Xstepperlast);
+  if (xStepperold != xStepper && timer + 200 < millis())
+  {
+    xStepperold = xStepper;
+    timer = millis();
+
+    Wire.beginTransmission(0x55); // Transmit to device with address 85 (0x55)
+    Wire.write(xStepper);
+    // Wire.write((xStepper));// Sends Potentiometer Reading (8Bit)
+    Wire.endTransmission();
+  }
 }
 
 void stepperRAdjust()
 {
   float rSpeed = 60 / 6 / ballInterval;
-  //Rspeed = ((60 / ballInterval - (((60 / ballInterval) / 60) * 20000) / 1000 / 2) / 6);
-  //Serial.println(Rspeed);
-  if(ballThrown) {
-    stepperR.setSpeedProfile(0, 1000, 5000);
+  // Rspeed = ((60 / ballInterval - (((60 / ballInterval) / 60) * 20000) / 1000 / 2) / 6);
+  // Serial.println(Rspeed);
+  if (ballThrown)
+  {
+    stepperR.setSpeedProfile(0, 4000, 10000);
     stepperR.setRPM(rSpeed);
     stepperR.rotate(30);
     ballThrown = false;
     Serial.println("DONE");
   }
 
-  //Serial.println(stepperR.getStepsRemaining());
-
+  // Serial.println(stepperR.getStepsRemaining());
 }
 
 void lichtschrankeAktion()
@@ -806,10 +946,10 @@ void debugAktion()
     debugUpdate(3, 2, 100, 0);
     break;
   case absSpeedMin:
-    debugUpdate(4, 2, 100, 0);
+    debugUpdate(4, 2, 70, 0);
     break;
   case absSpeedMax:
-    debugUpdate(5, 2, 100, 0);
+    debugUpdate(5, 2, 70, 0);
     break;
   case absSpinMin:
     debugUpdate(6, 2, 100, 0);
@@ -868,7 +1008,7 @@ void debugCheckSave()
     if (debugCursorPos[1] + 1 < 4)
     {
       lcd.setCursor(debugCursorPos[0], debugCursorPos[1] + 1);
-      lcd.write(byte(5));
+      lcd.write(empty);
     }
     updateDebugParameterStatus();
     debugCursorPos[1] = debugCursorPos[1] + 1;
@@ -923,30 +1063,88 @@ void updateDebugParameterStatus()
   }
 }
 
-int axisBerechnung(int maxVal, int minVal)
+int trommelBerechnung(int maxVal, int minVal)
 {
 }
 
-float trommelBerechnung(float maxVal, float minVal, float value)
+float absBerechnung(float maxVal, float minVal, float value)
 {
   return ((maxVal - minVal) / 100 * value + minVal);
 }
 void trommelBerechnen()
-{
+{ /*int verticalMinVal;
+int verticalMaxVal;
+int horizontalMinVal;
+int horizontalMaxVal;
+int absSpeedMinVal;
+int absSpeedMaxVal;
+int absSpinMinVal;
+int absSpinMaxVal;*/
+
+  // int curDebugValues[8] = {0, 100, 0, 100, 0, 100, 0, 100};
+  //  MIN u. MAX für L/R + H/T, aktuell 90°
+  //  Trommelgeschwindigkeit, absoluter Wert (MIN/MAX)
+  //  (MAX-MIN)/100 * x + MIN = 2 * x + MIN = TrommelSpeed
+  //  ^^ Schrittberechnung auf Basis von MIN und MAX ^^
+  //  Spin von 80:
+  //  Trommel1 = Trommelspeed * ((Spin+100)/2)/100 (→80%)
+  //  Trommel2 = Trommelspeed * (1-((Spin+100)/2)/100) (→20%)
+  //  MAX/MIN Spin analog Trommel
   // Ohne ges. Ball       Vert, Hor, Lower, Upper
   // int sollTromelMan [4]={0,0,0,0};
+
+  sollTrommelMan[0] = absBerechnung(curDebugValues[3], curDebugValues[2], abs(ballPosition[1] - 3));
+  sollTrommelMan[1] = absBerechnung(curDebugValues[1], curDebugValues[0], (ballPosition[0] - 1) * 50);
+  absSpin[0] = absBerechnung(curDebugValues[7], curDebugValues[6], ballSpin);
+  absSpeed[0] = absBerechnung(curDebugValues[5], curDebugValues[4], ballSpeed);
+  // Serial.println(absSpin[0],absSpeed[0]);
+  Serial.print(sollTrommelMan[1]);
+  sollTrommelMan[2] = absSpeed[0] * (1 - ((absSpin[0] + 100) / 2) / 100);
+  sollTrommelMan[3] = absSpeed[0] * ((absSpin[0] + 100) / 2) / 100;
+
+  sollTrommelOne[0] = absBerechnung(curDebugValues[3], curDebugValues[2], (ballOneValues[0] - 1) * 50);
+  sollTrommelOne[1] = absBerechnung(curDebugValues[1], curDebugValues[0], abs(ballOneValues[1] - 3));
+  absSpin[1] = absBerechnung(curDebugValues[8], curDebugValues[7], ballOneValues[3]);
+  absSpeed[1] = absBerechnung(curDebugValues[6], curDebugValues[7], ballOneValues[2]);
+  sollTrommelOne[2] = absSpeed[1] * (1 - ((absSpin[1] + 100) / 2) / 100);
+  sollTrommelOne[3] = absSpeed[1] * ((absSpin[1] + 100) / 2) / 100;
+
+  sollTrommelTwo[0] = absBerechnung(curDebugValues[3], curDebugValues[2], (ballTwoValues[0] - 1) * 50);
+  sollTrommelTwo[1] = absBerechnung(curDebugValues[1], curDebugValues[0], abs(ballTwoValues[1] - 3));
+  absSpin[2] = absBerechnung(curDebugValues[8], curDebugValues[7], ballTwoValues[3]);
+  absSpeed[2] = absBerechnung(curDebugValues[6], curDebugValues[7], ballTwoValues[2]);
+  sollTrommelTwo[2] = absSpeed[2] * (1 - ((absSpin[2] + 100) / 2) / 100);
+  sollTrommelTwo[3] = absSpeed[2] * ((absSpin[2] + 100) / 2) / 100;
+}
+void trommelAdjust()
+{
   switch (trommelStatus)
   {
   case man:
-    sollTrommelMan[1] = trommelBerechnung(curDebugValues[3], curDebugValues[2], (ballPosition[0] - 1) * 25);
-    sollTrommelMan[0] = trommelBerechnung(curDebugValues[1], curDebugValues[0], abs(ballPosition[0] - 3));
-    // Serial.println(sollTrommelMan[1]);
-    break;
-  case one:
-    break;
-  case two:
-    break;
-  default:
+
+    // Serial.print(Xstepperlast);
+    if (xStepperold != sollTrommelMan[1] && timer + 500 < millis())
+    {
+      xStepperold = sollTrommelMan[1];
+      timer = millis();
+
+      Wire.beginTransmission(0x55); // Transmit to device with address 85 (0x55)
+      Wire.write(byte(sollTrommelMan[0]));
+      Wire.write(byte(sollTrommelMan[1]));
+      Wire.endTransmission();
+    }
+    sendESC(sollTrommelMan[2], sollTrommelMan[3]);
+
     break;
   }
+}
+
+void sendESC(int upVal, int lowVal)
+{
+  Serial.println(upVal);
+  Serial.println(lowVal);
+  upVal = map(upVal, 0, 100, 1000, 2000);
+  lowVal = map(lowVal, 0, 100, 1000, 2000);
+  lowerESC.speed(lowVal);
+  upperESC.speed(upVal);
 }
